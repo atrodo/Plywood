@@ -59,7 +59,6 @@ my $grammar = {
   'grammar' => {
     'rules' => [
       {
-        'code'     => '',
         'comment'  => '',
         'line'     => ' input ',
         'raw_rule' => ' input',
@@ -73,21 +72,18 @@ my $grammar = {
   'input' => {
     'rules' => [
       {
-        'code'     => '',
         'comment'  => '/* empty string \*\/',
         'line'     => ' /* empty string \*\/ ',
         'raw_rule' => ' ',
         'rule'     => qr/^$/,
       },
       {
-        'code'     => '',
         'comment'  => '',
         'line'     => ' input line ',
         'raw_rule' => ' input line',
         'rule'     => '<input> <line>'
       },
       {
-        'code'     => '',
         'comment'  => '',
         'line'     => ' input line ',
         'raw_rule' => ' input line',
@@ -101,14 +97,13 @@ my $grammar = {
   'line' => {
     'rules' => [
       {
-        'code'     => '',
         'comment'  => '',
         'line'     => ' \'\\n\' ',
         'raw_rule' => ' n',
         'rule'     => '\n'
       },
       {
-        'code'     => '{ printf ("\\t%.10g\\n", $1); } ',
+        'code'     => sub { printf ("\t%.10f\n", $_[0]); },
         'comment'  => '',
         'line'     => ' exp \'\\n\' { printf ("\\t%.10g\\n", $1); } ',
         'raw_rule' => ' exp n ',
@@ -122,56 +117,56 @@ my $grammar = {
   'exp' => {
     'rules' => [
       {
-        'code'     => '{ $$ = $1; } ',
+        'code'     => sub { $_[0]; },
         'comment'  => '',
         'line'     => ' NUM { $$ = $1; } ',
         'raw_rule' => ' NUM ',
         'rule'     => '<NUM>'
       },
       {
-        'code'     => '{ $$ = $1 + $3; } ',
+        'code'     => sub { $_[0] + $_[2] },
         'comment'  => '',
         'line'     => ' exp \'+\' exp { $$ = $1 + $3; } ',
         'raw_rule' => ' exp + exp ',
         'rule'     => '<exp> + <exp>'
       },
       {
-        'code'     => '{ $$ = $1 - $3; } ',
+        'code'     => sub { $_[0] - $_[2]; },
         'comment'  => '',
         'line'     => ' exp \'-\' exp { $$ = $1 - $3; } ',
         'raw_rule' => ' exp - exp ',
         'rule'     => '<exp> - <exp>'
       },
       {
-        'code'     => '{ $$ = $1 * $3; } ',
+        'code'     => sub { $_[0] * $_[2] },
         'comment'  => '',
         'line'     => ' exp \'*\' exp { $$ = $1 * $3; } ',
         'raw_rule' => ' exp * exp ',
         'rule'     => '<exp> * <exp>'
       },
       {
-        'code'     => '{ $$ = $1 / $3; } ',
+        'code'     => sub { $_[0] / $_[2] },
         'comment'  => '',
         'line'     => ' exp \'/\' exp { $$ = $1 / $3; } ',
         'raw_rule' => ' exp / exp ',
         'rule'     => '<exp> / <exp>'
       },
       {
-        'code'     => '{ $$ = -$2; } ',
+        'code'     => sub { -$_[1] },
         'comment'  => '',
         'line'     => ' \'-\' exp %prec NEG { $$ = -$2; } ',
         'raw_rule' => ' - exp %prec NEG ',
         'rule'     => '- <exp> {prec NEG}'
       },
       {
-        'code'     => '{ $$ = pow ($1, $3); } ',
+        'code'     => sub { $_[0] ** $_[2] },
         'comment'  => '',
         'line'     => ' exp \'^\' exp { $$ = pow ($1, $3); } ',
         'raw_rule' => ' exp ^ exp ',
         'rule'     => '<exp> ^ <exp>'
       },
       {
-        'code'     => '{ $$ = $2; } ',
+        'code'     => sub { $_[1] },
         'comment'  => '',
         'line'     => ' \'(\' exp \')\' { $$ = $2; } ',
         'raw_rule' => ' ( exp ) ',

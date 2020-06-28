@@ -12,7 +12,7 @@ sub add_token
 {
   my $symname = shift;
   my $rule    = shift;
-  my $code    = shift;
+  my $code    = shift // sub { $_[0] };
 
   if ( exists $tokens{$symname} )
   {
@@ -24,7 +24,7 @@ sub add_token
 
   die qq{Duplicate rule "$symname"}
       if exists $lut{$symname};
-  $lut{$symname} = [ { qr => $rule, sym => $symname } ];
+  $lut{$symname} = [ { qr => $rule, sym => $symname, code => $code } ];
 }
 
 foreach my $symname ( keys %$gmr )
@@ -57,11 +57,20 @@ foreach my $symname ( keys %$gmr )
       {
         my $qr = qr/\Q$token/;
         push @atoms, $token;
-        add_token( $token, $qr, $rule->{code} );
+        add_token( $token, $qr);
       }
     }
+    my $code = $rule->{code};
+    if ( ref $code eq '' )
+    {
+      $code = sub { $_[0] };
+    }
+    if ( ref $code ne 'CODE' )
+    {
+      die "Illegal code block: " . ref $code;
+    }
     my $result = { atoms => \@atoms, sym => $symname, prec => $prec,
-      code => $rule->{code} };
+      code => $code };
     if ( ref $atoms[0] eq 'Regexp' )
     {
       $result->{qr} = $atoms[0];
@@ -171,17 +180,21 @@ RULE:
       my $qr = $rule->{qr};
       if ( $src =~ m/\G($qr)/g )
       {
-        warn "$qr => $1";
+        my $match = $1;
+        warn "$qr => $match";
         unshift @stack, $rule->{sym};
+        my $r = $rule->{code}->($match);
+        die Data::Dumper::Dumper($r, $match)
+          if $r ne $match;
+        unshift @result, $rule->{code}->($match);
         $matched = 1;
-        push @result, $rule->{code};
         last RULE;
       }
     }
     die "no matches"
         if !$matched;
   }
-  warn Data::Dumper::Dumper( \@stack );
+  warn Data::Dumper::Dumper( \@stack, \@result );
 NONTERM:
   {
     my $pos = pos $src;
@@ -192,7 +205,6 @@ RULE:
       my @atoms   = $rule->{atoms}->@*;
       my $sym     = $rule->{sym};
       my $matched = 1;
-      $DB::single = 1 if $atoms[0] eq '-';
       foreach my $i ( keys @atoms )
       {
         my $atom     = $atoms[$i];
@@ -207,10 +219,11 @@ RULE:
       }
       next RULE
           if !$matched;
-      my @rm = splice @stack, 0, scalar @atoms, ($sym);
+      my $count = scalar @atoms;
+      my @rm = splice @stack, 0, $count, ($sym);
       warn qq{Matched $sym on "@rm"};
-      warn Data::Dumper::Dumper( \@stack );
-      push @result, $rule->{code};
+      my @rrm = reverse splice @result, 0, $count;
+      unshift @result, $rule->{code}->(@rrm);
 
       #warn Data::Dumper::Dumper($rule);
       redo NONTERM;
