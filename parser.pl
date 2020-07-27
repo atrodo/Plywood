@@ -1,7 +1,8 @@
 use v5.28;
 
 use Data::Dumper;
-use List::Util qw/uniq/;
+use Carp;
+use List::Util qw/uniq max any/;
 my $gmr = do './gmr2.pl';
 
 my %lut;
@@ -57,20 +58,22 @@ foreach my $symname ( keys %$gmr )
       {
         my $qr = qr/\Q$token/;
         push @atoms, $token;
-        add_token( $token, $qr);
+        add_token( $token, $qr );
       }
     }
     my $code = $rule->{code};
     if ( ref $code eq '' )
     {
-      $code = sub { $_[0] };
+      $code = sub {@_};
     }
     if ( ref $code ne 'CODE' )
     {
       die "Illegal code block: " . ref $code;
     }
-    my $result = { atoms => \@atoms, sym => $symname, prec => $prec,
-      code => $code };
+    my $result = {
+      atoms => \@atoms, sym => $symname, prec => $prec,
+      code  => $code
+    };
     if ( ref $atoms[0] eq 'Regexp' )
     {
       $result->{qr} = $atoms[0];
@@ -80,15 +83,16 @@ foreach my $symname ( keys %$gmr )
   $lut{$symname} = \@rules;
 }
 
+#die Data::Dumper::Dumper(\%lut);
+
 my @nonterm;
 my @term;
-my %symnonterms;
-my %symterms;
 foreach my $sym ( keys %lut )
 {
   foreach my $rule ( $lut{$sym}->@* )
   {
-    if ( exists $rule->{qr} )
+    $rule->{is_term} = exists $rule->{qr};
+    if ( $rule->{is_term} )
     {
       push @term, $rule;
     }
@@ -98,143 +102,291 @@ foreach my $sym ( keys %lut )
     }
   }
 }
-@term    = uniq @term;
-@nonterm = uniq @nonterm;
+@term    = sort { $a->{sym} cmp $b->{sym} } uniq @term;
+@nonterm = sort { $a->{sym} cmp $b->{sym} } uniq @nonterm;
 
-# Given a symbol, what are all of its terminals
-foreach my $rule (@term)
-{
-  $symterms{ $rule->{sym} } = 1;
-}
 foreach my $rule (@nonterm)
 {
-  my $atom0 = $rule->{atoms}->[0];
-  warn $atom0;
-  next
-      if $atom0 eq $rule->{sym};
-
-  if ( $symterms{$atom0} )
+  my $rulesym = $rule->{sym};
+  my %lookahead;
+  my @to_check = ([$rule->{atoms}->[0]]);
+  my %chkd;
+  while ( my $check = shift @to_check )
   {
-    push $symnonterms{ $rule->{sym} }->@*, $atom0;
-  }
-}
-
-FINDNONTERM:
-foreach (0)
-{
-  warn Data::Dumper::Dumper( \%symnonterms );
-  foreach my $sym ( keys %symnonterms )
-  {
-    my @result   = $symnonterms{$sym}->@*;
-    my $keycount = scalar @result;
-    foreach my $atom0 ( $symnonterms{$sym}->@* )
+    my ($sym, @parents) = $check->@*;
+    next if $chkd{$sym};
+    $chkd{$sym} = 1;
+    foreach my $rule ( $lut{$sym}->@* )
     {
-      next
-          if $sym eq $atom0;
-      if ( exists $symnonterms{$atom0} )
+      if ( !defined $rule->{atoms} )
       {
-        push @result, $symnonterms{$atom0}->@*;
+        die 'asdf' if $lookahead{$sym};
+        $lookahead{$sym} = \@parents;
+        next;
       }
-    }
-    $symnonterms{$sym} = [ uniq @result ];
-    if ( $keycount != scalar $symnonterms{$sym}->@* )
-    {
-      redo FINDNONTERM;
+      next if !defined $rule->{atoms}->[0];
+      push @to_check, [$rule->{atoms}->[0], @parents, $sym];
     }
   }
+  $rule->{lookahead} = \%lookahead;
 }
+#die Data::Dumper::Dumper(\%lut);
 
-foreach my $sym ( keys %symnonterms )
-{
-  $symnonterms{$sym} = { map { $_ => 1 } $symnonterms{$sym}->@* };
-}
+#die Data::Dumper::Dumper(\@term, \@nonterm);
 
 my $src = do { local $/; <> };
+my @ascent = ( [ grep { $_->{sym} eq 'grammar' } @nonterm ] );
 my @stack;
 my @result;
 pos $src = 0;
-PARSE:
-while (1)
+
+sub lookahead
 {
-  warn pos $src;
-  $ws_trim->( \$src );
-  my $pos = pos $src;
-  warn Data::Dumper::Dumper( $pos, \@stack );
-  if ( @stack == 1 && $stack[0] eq 'grammar' )
+  my $src = shift;
+
+  if ( pos $$src == length $$src )
   {
-    die "finalized with more data"
-        if $pos ne length $src;
-    last;
+    return { la => undef, lasym => 'EOF', match => '' };
   }
+  $ws_trim->( $src );
+  my $pos = pos $$src;
   if ( !defined $pos )
   {
     die "Bad parsing";
   }
-TERM:
+
+  my $lookahead;
+  my $match;
+LOOKAHEAD:
   {
-    my $matched;
 RULE:
     foreach my $rule (@term)
     {
-      pos($src) = $pos;
+      pos($$src) = $pos;
       my $qr = $rule->{qr};
-      if ( $src =~ m/\G($qr)/g )
+      if ( $$src =~ m/\G($qr)/g )
       {
-        my $match = $1;
+        $match = $1;
         warn "$qr => $match";
-        unshift @stack, $rule->{sym};
-        my $r = $rule->{code}->($match);
-        die Data::Dumper::Dumper($r, $match)
-          if $r ne $match;
-        unshift @result, $rule->{code}->($match);
-        $matched = 1;
+
+        #unshift @stack, $rule->{sym};
+        #my $r = $rule->{code}->($match);
+        #die Data::Dumper::Dumper( $r, $match )
+        #    if $r ne $match;
+        #unshift @result, $rule->{code}->($match);
+        #$matched = 1;
+        $lookahead = $rule;
         last RULE;
       }
     }
     die "no matches"
-        if !$matched;
+        if !defined $lookahead;
   }
-  warn Data::Dumper::Dumper( \@stack, \@result );
-NONTERM:
+  return { la => $lookahead, lasym => $lookahead->{sym}, match => $match };
+}
+
+sub reduce
+{
+  my @stack = @_;
+}
+
+sub can_w_lookahead
+{
+  my $lasym = shift;
+  my $sym = shift;
+  return any { $_->{lookahead}->{$lasym} } $lut{$sym}->@*;
+}
+
+sub bascend
+{
+  my ( $sym, $lookahead, $src ) = @_;
+  #my $sym = shift;
+  #my $lookahead = shift;
+  #my $src = shift;
+
+  my @stack;
+  my $lasym;
+
+  if ( ref $sym eq 'ARRAY' )
   {
-    my $pos = pos $src;
-RULE:
-    foreach my $rule (@nonterm)
+    my @ascend_stack = @$sym;
+    $sym = shift @ascend_stack;
+    $_[0] = $sym;
+    if ( @ascend_stack > 0 )
     {
-      pos($src) = $pos;
-      my @atoms   = $rule->{atoms}->@*;
-      my $sym     = $rule->{sym};
-      my $matched = 1;
-      foreach my $i ( keys @atoms )
-      {
-        my $atom     = $atoms[$i];
-        my $stacksym = $stack[ $#atoms - $i ];
-        next
-            if $atom eq $stacksym;
-
-        #next
-        #  if $symnonterms{$sym}->{$stacksym};
-        undef $matched;
-        last;
-      }
-      next RULE
-          if !$matched;
-      my $count = scalar @atoms;
-      my @rm = splice @stack, 0, $count, ($sym);
-      warn qq{Matched $sym on "@rm"};
-      my @rrm = reverse splice @result, 0, $count;
-      unshift @result, $rule->{code}->(@rrm);
-
-      #warn Data::Dumper::Dumper($rule);
-      redo NONTERM;
+      ($lookahead, $lasym, my $reduction) = bascend(\@ascend_stack, $lookahead, $src);
+      $DB::single=1;
+      push @stack, $reduction;
     }
   }
 
-  #warn Data::Dumper::Dumper(\@stack);
-  state $i= 0;
-  last PARSE if $i++ == 25;
-}
-die Data::Dumper::Dumper( \@stack, \@result );
+  $DB::single =1 if !defined $lut{$sym};
+  my @rules = $lut{$sym}->@*;
+  my $max_atoms = max( map { scalar $_->{atoms}->@* } @rules );
 
-#die Data::Dumper::Dumper(\%lut, \@term, \@nonterm);
+  Carp::cluck $sym;
+  my $shift = sub
+  {
+    return
+      if @rules == 0;
+
+    my $la_atom;
+    my $i = scalar @stack;
+    foreach my $rule ( @rules )
+    {
+      my $atom = $rule->{atoms}->[$i];
+      if ( !defined $la_atom )
+      {
+        $la_atom = $atom;
+      }
+      return
+        if $la_atom ne $atom;
+    }
+
+    return
+      if $lasym ne $la_atom;
+
+    push @stack, $lookahead;
+    undef $lookahead;
+    undef $lasym;
+
+    return 1;
+  };
+
+  my $reduce = sub
+  {
+    return
+      if @rules != 1;
+
+    my $rule = $rules[0];
+    my @atoms   = $rule->{atoms}->@*;
+    return
+      if @atoms != @stack;
+    foreach my $i ( keys @atoms )
+    {
+      die 'bad reduce'
+        if $atoms[$i] ne $stack[$i]->{lasym};
+    }
+    my $result = $rule->{code}->( map { $_->{match} } @stack );
+    @stack = { lasym => $sym, match => $result };
+    @rules = grep { $_->{atoms}->[0] eq $sym } $lut{$sym}->@*;
+    return 1;
+  };
+
+  if ( defined $lookahead && @stack == 0 )
+  {
+    $lasym = $lookahead->{lasym};
+    #$DB::single = 1;
+    @rules = grep { $_->{atoms}->[0] eq $lasym } @rules;
+    $shift->();
+    $reduce->();
+  }
+
+  while ( scalar @stack < $max_atoms )
+  {
+    if (!defined $lookahead)
+    {
+      $lookahead = lookahead($src);
+    }
+    $lasym = $lookahead->{lasym};
+
+    my $i = scalar @stack;
+    warn Data::Dumper::Dumper(\@stack);
+
+    #die "Could not find reduction for $sym"
+    #  if @rules == 0;
+    last
+      if @rules == 0;
+
+    my @new_rules;
+    RULE:
+    foreach my $rule ( @rules )
+    {
+      my @atoms = $rule->{atoms}->@*;
+      foreach my $n ( keys @atoms )
+      {
+        last
+          if $n >= @stack;
+        if ( $atoms[$n] ne $stack[$n]->{lasym} )
+        {
+          next RULE;
+        }
+      }
+      if ( @atoms == @stack )
+      {
+        push @new_rules, $rule;
+        next;
+      }
+
+      my $atom = $rule->{atoms}->[$i];
+      if ( $atom eq $lasym )
+      {
+        push @new_rules, $rule;
+        next;
+      }
+      if ( $i == 0 && $rule->{lookahead}->{$lasym} )
+      {
+        push @new_rules, $rule;
+        next;
+      }
+      if ( can_w_lookahead($lasym, $atom) )
+      {
+        push @new_rules, $rule;
+        next;
+      }
+    }
+    @rules = @new_rules;
+
+  #$DB::single = 1;
+    if ( @rules == 1 )
+    {
+      my $atom = $i == 0 ? $rules[0]->{lookahead}->{$lasym} : $rules[0]->{atoms}->[$i];
+      my $is_term = ref $atom ne '' ? 0 : $lut{$atom}->[0]->{is_term};
+      if ( defined $atom && !$is_term )
+      {
+        #die Data::Dumper::Dumper( bascend($atom, $lookahead, $src) );
+        ($lookahead, $lasym, my $reduction) = bascend($atom, $lookahead, $src);
+        push @stack, $reduction;
+      }
+    }
+
+    $shift->();
+    $reduce->();
+    #foreach my $rule ( @rules )
+    #{
+    #  my $tomatch = $rule->{atoms}->[$i];
+    #  if ( $i == 0 )
+    #  {
+    #    $tomatch = $rule->{lookahead}->{$lasym};
+    #  }
+    #  if ( !defined $atom )
+    #  {
+    #    $atom = $tomatch;
+    #  }
+    #  if ( $atom ne $tomatch )
+    #  {
+    #    die 'fdsa';
+    #  }
+    #}
+    #warn Data::Dumper::Dumper( $lookahead, \@rules, $atom);
+    #die if $sym eq 'exp';
+    #die Data::Dumper::Dumper( bascend($atom, $lookahead, $src) );
+  }
+
+  #$DB::single = 1;
+  if ( @rules == 0 && @stack == 1 && $stack[0]->{lasym} eq $sym )
+  {
+    return ($lookahead, $lasym, $stack[0])
+  }
+
+  die;
+  die "Could not reduce with multiple rules " . scalar @rules
+    if @rules != 1;
+  my $rule = $rules[0];
+  my $result = $rule->{code}->( map { $_->{match} } @stack );
+  return (\@stack, $lookahead, { lasym => $sym, match => $result });
+}
+
+die Data::Dumper::Dumper( bascend('grammar', undef, \$src) );
+
 1;
