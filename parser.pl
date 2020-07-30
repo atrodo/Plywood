@@ -69,6 +69,13 @@ foreach my $symname ( keys %$gmr )
         add_token( $token, $qr );
       }
     }
+
+    if ( $rulestr eq '' )
+    {
+      add_token( 'EMPTY', qr// );
+      push @atoms, 'EMPTY';
+    }
+
     my $code = $rule->{code};
     if ( ref $code eq '' )
     {
@@ -86,6 +93,7 @@ foreach my $symname ( keys %$gmr )
     {
       $result->{qr} = $atoms[0];
     }
+
     push @rules, $result;
   }
   $lut{$symname} = \@rules;
@@ -106,6 +114,8 @@ foreach my $sym ( keys %lut )
     }
     else
     {
+      warn "Found rule for $sym that includes no atoms"
+        if $rule->{atoms}->$#* == -1;
       push @nonterm, $rule;
     }
   }
