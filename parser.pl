@@ -341,39 +341,17 @@ sub bascend
     return 1;
   };
 
-  if ( defined $lookahead && @stack == 0 )
+  my $trim_rules = sub
   {
-    $lasym = $lookahead->{lasym};
-    #$DB::single = 1;
-    @rules = grep { $_->{atoms}->[0] eq $lasym } @rules;
-    $shift->();
-    $reduce->();
-  }
-
-  while ( scalar @stack < $max_atoms )
-  {
-    if (!defined $lookahead)
-    {
-      $lookahead = lookahead($src);
-    }
-    $lasym = $lookahead->{lasym};
-
-    my $i = scalar @stack;
-    warn Data::Dumper::Dumper(\@stack);
-
-    #die "Could not find reduction for $sym"
-    #  if @rules == 0;
-    last
-      if @rules == 0;
-
     my @new_rules;
+    my $i = scalar @stack;
     RULE:
     foreach my $rule ( @rules )
     {
       my @atoms = $rule->{atoms}->@*;
       foreach my $n ( keys @atoms )
       {
-        last
+        next
           if $n >= @stack;
         if ( $atoms[$n] ne $stack[$n]->{lasym} )
         {
@@ -385,6 +363,9 @@ sub bascend
         push @new_rules, $rule;
         next;
       }
+
+      next
+        if !defined $lasym;
 
       my $atom = $rule->{atoms}->[$i];
       if ( $atom eq $lasym )
@@ -403,14 +384,52 @@ sub bascend
         next;
       }
     }
-    @rules = @new_rules;
+    return @new_rules;
+  };
+
+  if ( defined $lookahead && @stack == 0 )
+  {
+    $lasym = $lookahead->{lasym};
+    @rules = grep { $_->{atoms}->[0] eq $lasym } @rules;
+    $shift->();
+    $reduce->();
+  }
+
+  while ( scalar @stack < $max_atoms )
+  {
+    if (!defined $lookahead)
+    {
+      $lookahead = lookahead($src, \@rules, scalar @stack);
+    }
+    $lasym = $lookahead->{lasym}
+      if defined $lookahead;
+
+    warn Data::Dumper::Dumper(\@stack);
+
+    @rules = $trim_rules->();
+
+    if ( @rules == 0 && @stack == 0 )
+    {
+      @rules = grep { $_->{lookahead}->{$lasym} } $lut{$sym}->@*;
+      if ( @rules > 0 )
+      {
+        my $ascend_sym = $rules[0]->{lookahead}->{$lasym};
+        ($lookahead, $lasym, my $reduction) = bascend($ascend_sym, $lookahead, $src);
+        push @stack, $reduction;
+        redo;
+      }
+    }
+
+    last
+      if @rules == 0;
 
   #$DB::single = 1;
     if ( @rules == 1 )
     {
-      my $atom = $i == 0 ? $rules[0]->{lookahead}->{$lasym} : $rules[0]->{atoms}->[$i];
-      my $is_term = ref $atom ne '' ? 0 : $lut{$atom}->[0]->{is_term};
-      if ( defined $atom && !$is_term )
+      my $i = scalar @stack;
+      my $atom = $rules[0]->{atoms}->[$i];
+      my $has_nonterm = any { !$_->{is_term} } $lut{$atom}->@*;
+      if ( defined $atom && $has_nonterm )
       {
         #die Data::Dumper::Dumper( bascend($atom, $lookahead, $src) );
         ($lookahead, $lasym, my $reduction) = bascend($atom, $lookahead, $src);
@@ -447,7 +466,7 @@ sub bascend
     return ($lookahead, $lasym, $stack[0])
   }
 
-  die;
+  die Data::Dumper::Dumper($sym, $lookahead, \@stack);
   die "Could not reduce with multiple rules " . scalar @rules
     if @rules != 1;
   my $rule = $rules[0];
@@ -455,6 +474,6 @@ sub bascend
   return (\@stack, $lookahead, { lasym => $sym, match => $result });
 }
 
-die Data::Dumper::Dumper( bascend('grammar', undef, \$src) );
+die Data::Dumper::Dumper( bascend('grammar', undef, \$src), 'success' );
 
 1;
