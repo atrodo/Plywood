@@ -161,21 +161,56 @@ my @stack;
 my @result;
 pos $src = 0;
 
+sub can_w_lookahead
+{
+  my $lasym = shift;
+  my $sym = shift;
+  return any { $_->{lookahead}->{$lasym} } $lut{$sym}->@*;
+}
+
 sub lookahead
 {
   my $src = shift;
+  my $rules = shift;
+  my $rule_idx = shift;
 
   if ( pos $$src == length $$src )
   {
-    return { la => undef, lasym => 'EOF', match => '' };
   }
+
+  # Reset Zero-length matches logic
+  pos($$src) = pos $$src;
   $ws_trim->( $src );
+
   my $pos = pos $$src;
   if ( !defined $pos )
   {
     die "Bad parsing";
   }
 
+  my %avl_syms;
+  foreach my $rule ( @$rules )
+  {
+    if ( $rule->{is_term} )
+    {
+      $avl_syms{$rule->{sym}} = 1;
+      next;
+    }
+    my $atom = $rule->{atoms}->[$rule_idx];
+    next
+      if !defined $atom;
+    foreach my $la_rule ( $lut{$atom}->@* )
+    {
+      if ( $la_rule->{is_term} )
+      {
+        $avl_syms{$la_rule->{sym}} = 1;
+      }
+      foreach ( keys $la_rule->{lookahead}->%* )
+      {
+        $avl_syms{$_} = 1;
+      }
+    }
+  }
   my $lookahead;
   my $match;
 LOOKAHEAD:
@@ -183,6 +218,9 @@ LOOKAHEAD:
 RULE:
     foreach my $rule (@term)
     {
+      my $sym = $rule->{sym};
+      next
+        unless $avl_syms{$sym};
       pos($$src) = $pos;
       my $qr = $rule->{qr};
       if ( ref $qr eq 'CODE' )
@@ -200,7 +238,7 @@ RULE:
       if ( $$src =~ m/\G($qr)/g )
       {
         $match = $1;
-        warn "$qr => $match";
+        warn "$sym => $match";
 
         #unshift @stack, $rule->{sym};
         #my $r = $rule->{code}->($match);
@@ -211,23 +249,18 @@ RULE:
         $lookahead = $rule;
         last RULE;
       }
+      }
     }
-    die "no matches"
-        if !defined $lookahead;
+    #die "no matches"
+    #    if !defined $lookahead;
+  }
+  if ( !defined $lookahead )
+  {
+    $DB::single = 1;
+    pos $$src = $pos;
+    return;
   }
   return { la => $lookahead, lasym => $lookahead->{sym}, match => $match };
-}
-
-sub reduce
-{
-  my @stack = @_;
-}
-
-sub can_w_lookahead
-{
-  my $lasym = shift;
-  my $sym = shift;
-  return any { $_->{lookahead}->{$lasym} } $lut{$sym}->@*;
 }
 
 sub bascend
