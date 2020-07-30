@@ -334,7 +334,7 @@ sub bascend
         if $atoms[$i] ne $stack[$i]->{lasym};
     }
     my $result = $rule->{code}->( map { $_->{match} } @stack );
-    @stack = { lasym => $sym, match => $result };
+    @stack = ({ lasym => $sym, match => $result, ast => [map { { $_->%{qw/lasym match ast/} } } @stack] });
     @rules = grep { $_->{atoms}->[0] eq $sym } $lut{$sym}->@*;
     return 1;
   };
