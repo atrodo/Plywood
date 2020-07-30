@@ -133,17 +133,20 @@ foreach my $rule (@nonterm)
   {
     my ($sym, @parents) = $check->@*;
     next if $chkd{$sym};
+    # Bypass the current symbol if it's the very first parent
+    shift @parents
+      if $parents[0] eq $rulesym;
     $chkd{$sym} = 1;
-    foreach my $rule ( $lut{$sym}->@* )
+    foreach my $larule ( $lut{$sym}->@* )
     {
-      if ( !defined $rule->{atoms} )
+      if ( !defined $larule->{atoms} )
       {
         die 'asdf' if $lookahead{$sym};
-        $lookahead{$sym} = \@parents;
+        $lookahead{$sym} = @parents == 0 ? $sym : \@parents;
         next;
       }
-      next if !defined $rule->{atoms}->[0];
-      push @to_check, [$rule->{atoms}->[0], @parents, $sym];
+      next if !defined $larule->{atoms}->[0];
+      push @to_check, [$larule->{atoms}->[0], @parents, $sym];
     }
   }
   $rule->{lookahead} = \%lookahead;
