@@ -295,6 +295,8 @@ sub bascend
   {
     return
       if @rules == 0;
+    return
+      if !defined $lookahead;
 
     my $la_atom;
     my $i = scalar @stack;
