@@ -32,10 +32,18 @@ foreach my $symname ( keys %$gmr )
 {
   my @rules;
   my $sym = $gmr->{$symname};
-  if ( $sym->{rules}->$#* == 0 && ref $sym->{rules}->[0] eq 'Regexp' )
+  if ( $sym->{rules}->$#* == 0 )
   {
-    add_token( $symname, $sym->{rules}->[0] );
-    next;
+    if ( ref $sym->{rules}->[0] eq 'Regexp' )
+    {
+      add_token( $symname, $sym->{rules}->[0] );
+      next;
+    }
+    if ( ref $sym->{rules}->[0] eq 'CODE' )
+    {
+      add_token( $symname, $sym->{rules}->[0] );
+      next;
+    }
   }
   foreach my $rule ( $sym->{rules}->@* )
   {
@@ -164,6 +172,18 @@ RULE:
     {
       pos($$src) = $pos;
       my $qr = $rule->{qr};
+      if ( ref $qr eq 'CODE' )
+      {
+        my $match = $qr->($src);
+        if ( defined $match )
+        {
+          warn "$qr => $match";
+          $lookahead = $rule;
+          last RULE;
+        }
+      }
+      else
+      {
       if ( $$src =~ m/\G($qr)/g )
       {
         $match = $1;
