@@ -417,6 +417,7 @@ sub bascend
   {
     my @new_rules;
     my $i = scalar @stack;
+    my $stkcnt = $i + defined $lookahead ? 1 : 0;
     RULE:
     foreach my $rule ( @rules )
     {
@@ -430,7 +431,7 @@ sub bascend
           next RULE;
         }
       }
-      if ( @atoms == @stack )
+      if ( @atoms == $stkcnt )
       {
         push @new_rules, $rule;
         next;
