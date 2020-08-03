@@ -260,29 +260,22 @@ sub lookahead
       }
     }
   }
-  my $lookahead;
-  my $match;
+
+  my @la;
 LOOKAHEAD:
   {
-RULE:
-    foreach my $rule (@term)
+    my $chk_qr = sub
     {
-      my $sym = $rule->{sym};
-      next
-        unless $avl_syms{$sym};
+      my $qr = shift;
       pos($$src) = $pos;
-      my $qr = $rule->{qr};
       if ( ref $qr eq 'CODE' )
       {
         my $match = $qr->($src);
         if ( defined $match )
         {
-          warn "$qr => $match";
-          $lookahead = $rule;
-          last RULE;
+          return $match;
         }
       }
-      else
       {
       if ( $$src =~ m/\G($qr)/g )
       {
@@ -298,18 +291,48 @@ RULE:
         $lookahead = $rule;
         last RULE;
       }
+      else
+      {
+        if ( $$src =~ m/\G($qr)/g )
+        {
+          my $match = $1;
+          return $match;
+        }
       }
+      return;
+    };
+RULE:
+    foreach my $rule (@term)
+    {
+      my $sym = $rule->{sym};
+      next
+        unless $avl_syms{$sym};
+      my $qr = $rule->{qr};
+      my $match = $chk_qr->($qr);
+          if ( defined $match )
+          {
+          warn "$sym => $match";
+          #pos $$src = $pos + length $match;
+  push @la, { la => $rule, lasym => $rule->{sym}, match => $match };
+          next RULE;
+          }
     }
     #die "no matches"
     #    if !defined $lookahead;
   }
+  if ( my @nonzero = grep { length $_->{match} gt 0 } @la )
+  {
+    @la = @nonzero;
+  }
+  die "Ambgious symbols" if @la > 1;
+  my $lookahead = $la[0];
   if ( !defined $lookahead )
   {
-    $DB::single = 1;
     pos $$src = $pos;
     return;
   }
-  return { la => $lookahead, lasym => $lookahead->{sym}, match => $match };
+  pos $$src = $pos + length $lookahead->{match};
+  return $lookahead;
 }
 
 sub bascend
