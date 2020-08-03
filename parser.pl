@@ -29,6 +29,28 @@ sub add_token
   $lut{$symname} = [ { qr => $rule, sym => $symname, code => $code } ];
 }
 
+sub gen_code
+{
+  my $symname = shift;
+  my $code = shift;
+  if ( ref $code eq '' )
+  {
+    if ( $code )
+    {
+      $code = sub { warn "Using default code for non-empty code sym: $symname"; $_[0]; }
+    }
+    else
+    {
+      $code = sub {$_[0]};
+    }
+  }
+  if ( ref $code ne 'CODE' )
+  {
+    die "Illegal code block: " . ref $code;
+  }
+  return $code;
+}
+
 foreach my $symname ( keys %$gmr )
 {
   my @rules;
@@ -77,15 +99,7 @@ foreach my $symname ( keys %$gmr )
       push @atoms, 'EMPTY';
     }
 
-    my $code = $rule->{code};
-    if ( ref $code eq '' )
-    {
-      $code = sub {@_};
-    }
-    if ( ref $code ne 'CODE' )
-    {
-      die "Illegal code block: " . ref $code;
-    }
+    my $code = gen_code($symname, $rule->{code});
     my $result = {
       atoms => \@atoms, sym => $symname, prec => $prec,
       code  => $code
