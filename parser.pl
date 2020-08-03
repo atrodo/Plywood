@@ -1,9 +1,10 @@
 use v5.28;
+use warnings;
 
 use Data::Dumper;
 use Carp;
 use List::Util qw/uniq max any/;
-my $gmr = do './gmr2.pl';
+my $gmr = do './gmr.pl' || die;
 
 my %lut;
 my %tokens;
