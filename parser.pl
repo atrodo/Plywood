@@ -145,6 +145,29 @@ foreach my $sym ( keys %lut )
 @term    = sort { $a->{sym} cmp $b->{sym} } uniq @term;
 @nonterm = sort { $a->{sym} cmp $b->{sym} } uniq @nonterm;
 
+sub _same_check
+{
+  my $old = shift;
+  my $new = shift;
+
+  return
+    if ref $old ne ref $new;
+  if ( ref $old eq '' )
+  {
+    return $old eq $new
+  }
+  return
+    if ref $old ne 'ARRAY';
+  return
+    if $old->$#* != $new->$#*;
+  foreach my $i ( keys @$old )
+  {
+    return
+      if $old->[$i] ne $new->[$i];
+  }
+  return 1;
+}
+
 foreach my $rule (@nonterm)
 {
   my $rulesym = $rule->{sym};
@@ -157,14 +180,18 @@ foreach my $rule (@nonterm)
     next if $chkd{$sym};
     # Bypass the current symbol if it's the very first parent
     shift @parents
-      if $parents[0] eq $rulesym;
+      if @parents && $parents[0] eq $rulesym;
     $chkd{$sym} = 1;
     foreach my $larule ( $lut{$sym}->@* )
     {
       if ( !defined $larule->{atoms} )
       {
-        die 'asdf' if $lookahead{$sym};
-        $lookahead{$sym} = @parents == 0 ? $sym : \@parents;
+        my $la = @parents == 0 ? $sym : \@parents;
+        if ( $lookahead{$sym} && !_same_check( $lookahead{$sym}, $la ) )
+        {
+          die 'asdf';
+        }
+        $lookahead{$sym} = $la;
         next;
       }
       next if !defined $larule->{atoms}->[0];
