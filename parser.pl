@@ -70,7 +70,14 @@ foreach my $symname ( keys %$gmr )
   }
   foreach my $rule ( $sym->{rules}->@* )
   {
+    if ( ref $rule eq 'Regexp' || ref $rule eq 'CODE' )
+    {
+      push @rules, { qr => $rule, sym => $symname, code => sub {$_[0]} };
+      next;
+    }
+    next if ref $rule eq '';
     my @atoms;
+    die ref $rule if ref $rule ne 'HASH';
     my $rulestr = $rule->{rule};
     my $prec    = '';
     $rulestr =~ s/[{]prec (.*)[}]//;
