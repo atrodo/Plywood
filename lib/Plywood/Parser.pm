@@ -39,7 +39,7 @@ sub gen_code
   {
     if ( $code )
     {
-      $code = sub { warn "Using default code for non-empty code sym: $symname"; $_[0]; }
+      $code = sub { warn "Using default code for non-empty code sym: $symname"; $_[0] . ' - DEFUALT'; }
     }
     else
     {
@@ -191,8 +191,10 @@ foreach my $rule (@nonterm)
         my $la = @parents == 0 ? $sym : \@parents;
         if ( $lookahead{$sym} && !_same_check( $lookahead{$sym}, $la ) )
         {
+          $DB::single = 1;
           die 'asdf';
         }
+        #$lookahead{$sym} = $rule->{is_term} ? $sym : \@parents;
         $lookahead{$sym} = $la;
         next;
       }
@@ -227,6 +229,7 @@ sub lookahead
 
   if ( pos $$src == length $$src )
   {
+    #return { la => undef, lasym => 'EOF', match => '' };
   }
 
   # Reset Zero-length matches logic
@@ -262,6 +265,7 @@ sub lookahead
       }
     }
   }
+  warn Data::Dumper::Dumper(\%avl_syms);
 
   my @la;
 LOOKAHEAD:
@@ -311,6 +315,7 @@ RULE:
           if ( defined $match )
           {
           warn "$sym => $match";
+          #$lookahead = $rule;
           #pos $$src = $pos + length $match;
   push @la, { la => $rule, lasym => $rule->{sym}, match => $match };
           next RULE;
@@ -319,10 +324,12 @@ RULE:
     #die "no matches"
     #    if !defined $lookahead;
   }
+  warn Data::Dumper::Dumper(@la);
   if ( my @nonzero = grep { length $_->{match} gt 0 } @la )
   {
     @la = @nonzero;
   }
+  $DB::single = 1 if @la > 1;
   die "Ambgious symbols" if @la > 1;
   my $lookahead = $la[0];
   if ( !defined $lookahead )
@@ -332,6 +339,7 @@ RULE:
   }
   pos $$src = $pos + length $lookahead->{match};
   return $lookahead;
+  #return { la => $lookahead, lasym => $lookahead->{sym}, match => $match };
 }
 
 sub bascend
@@ -352,10 +360,14 @@ sub bascend
     if ( @ascend_stack > 0 )
     {
       ($lookahead, $lasym, my $reduction) = bascend(\@ascend_stack, $lookahead, $src);
-      $DB::single=1;
       push @stack, $reduction;
     }
   }
+
+  # In cases when $lasym eq $sym and $lasym is a term while the rest of the
+  # rules are nonterm, we're in an odd space where it happens to work out
+  # because we've entered this state, but in fact, if we had started in this
+  # space, we may not have actually gotten here
 
   $DB::single =1 if !defined $lut{$sym};
   my @rules = $lut{$sym}->@*;
@@ -406,6 +418,7 @@ sub bascend
       die 'bad reduce'
         if $atoms[$i] ne $stack[$i]->{lasym};
     }
+    #$DB::single = 1;
     my $result = $rule->{code}->( map { $_->{match} } @stack );
     @stack = ({ lasym => $sym, match => $result, rule => join(' ', $rule->{atoms}->@*), ast => [map { { $_->%{qw/lasym match ast rule/} } } @stack] });
     @rules = grep { $_->{atoms}->[0] eq $sym } $lut{$sym}->@*;
@@ -445,6 +458,8 @@ sub bascend
         push @new_rules, $rule;
         next;
       }
+      #my @atom_rules = $lut{$atom}->@*;
+      #if ( 
       if ( $i == 0 && $rule->{lookahead}->{$lasym} )
       {
         push @new_rules, $rule;
@@ -462,6 +477,7 @@ sub bascend
   if ( defined $lookahead && @stack == 0 )
   {
     $lasym = $lookahead->{lasym};
+    #$DB::single = 1;
     @rules = grep { $_->{atoms}->[0] eq $lasym } @rules;
     $shift->();
     $reduce->();
@@ -492,6 +508,8 @@ sub bascend
       }
     }
 
+    #die "Could not find reduction for $sym"
+    #  if @rules == 0;
     last
       if @rules == 0;
 
@@ -499,16 +517,24 @@ sub bascend
     if ( @rules == 1 )
     {
       my $i = scalar @stack;
+      #my $atom = $i == 0 ? $rules[0]->{lookahead}->{$lasym} : $rules[0]->{atoms}->[$i];
+      #my $is_term = ref $atom ne '' ? 0 : $lut{$atom}->[0]->{is_term};
+      #my $has_nonterm = ref $atom ne '' ? 0 : any { !$_->{is_term} } $lut{$atom}->@*;
       my $atom = $rules[0]->{atoms}->[$i];
       my $has_nonterm = any { !$_->{is_term} } $lut{$atom}->@*;
       if ( defined $atom && $has_nonterm )
       {
         #die Data::Dumper::Dumper( bascend($atom, $lookahead, $src) );
+        if ( $i == 0 )
+        {
+          #$atom = $rules[0]->{lookahead}->{$lasym};
+        }
         ($lookahead, $lasym, my $reduction) = bascend($atom, $lookahead, $src);
         push @stack, $reduction;
       }
     }
 
+    $DB::single =1 if !defined $stack[-1];
     $shift->();
     $reduce->();
     #foreach my $rule ( @rules )
