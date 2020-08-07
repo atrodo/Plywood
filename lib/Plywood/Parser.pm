@@ -1,10 +1,12 @@
+package Plywood::Parser;
+
 use v5.28;
 use warnings;
 
 use Data::Dumper;
 use Carp;
 use List::Util qw/uniq max any/;
-my $gmr = do './gmr.pl' || die;
+my $gmr = require Plywood::Gmrs::p5;
 
 my %lut;
 my %tokens;
@@ -208,11 +210,6 @@ foreach my $rule (@nonterm)
 
 #die Data::Dumper::Dumper(\@term, \@nonterm);
 
-my $src = do { local $/; <> };
-my @ascent = ( [ grep { $_->{sym} eq 'grammar' } @nonterm ] );
-my @stack;
-my @result;
-pos $src = 0;
 
 sub can_w_lookahead
 {
@@ -369,7 +366,6 @@ sub bascend
   # because we've entered this state, but in fact, if we had started in this
   # space, we may not have actually gotten here
 
-  $DB::single =1 if !defined $lut{$sym};
   my @rules = $lut{$sym}->@*;
   my $max_atoms = max( map { scalar $_->{atoms}->@* } @rules );
 
@@ -477,7 +473,6 @@ sub bascend
   if ( defined $lookahead && @stack == 0 )
   {
     $lasym = $lookahead->{lasym};
-    #$DB::single = 1;
     @rules = grep { $_->{atoms}->[0] eq $lasym } @rules;
     $shift->();
     $reduce->();
@@ -534,7 +529,6 @@ sub bascend
       }
     }
 
-    $DB::single =1 if !defined $stack[-1];
     $shift->();
     $reduce->();
     #foreach my $rule ( @rules )
@@ -572,11 +566,18 @@ sub bascend
   return (\@stack, $lookahead, { lasym => $sym, match => $result });
 }
 
-use B::Terse;
-$begin->() if $begin;
-warn Data::Dumper::Dumper( bascend('grammar', undef, \$src), 'success' );
-B::Terse::compile()->();
-$end->() if $end;
-die;
+sub parse
+{
+  my $class = shift;
+  my $gmr = shift;
+  my $src = shift;
+  pos $src = 0;
+
+  use B::Terse;
+  $begin->() if $begin;
+  my $result = bascend('grammar', undef, \$src);
+  $end->() if $end;
+  return $result->{match};
+}
 
 1;

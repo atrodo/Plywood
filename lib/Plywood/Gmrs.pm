@@ -39,7 +39,6 @@ sub op_convert_list
 
   if ( ref $op eq '' )
   {
-    $DB::single = 1;
     $op = newSVOP('CONST', 0, "$op");
   }
   return _op_convert_list($type, $flags, $op);
@@ -70,7 +69,6 @@ sub op_append_elem
     $last = newSVOP('CONST', 0, "$last");
   }
 
-  $DB::single = 1;
   return _op_append_list($type, $first, $last);
 }
 

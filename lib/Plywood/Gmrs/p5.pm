@@ -759,7 +759,7 @@ my $grammar = {
       {
         'code' =>
             '{ parser->expect = XSTATE $<ival>$ = 0 } { newPROG(block_end($3,$4)) PL_compiling.cop_seq = 0 $$ = 0 } ',
-         code => sub { newPROG(block_end($_[1],$_[2])) ;  0 },
+         code => sub { block_end($_[1],$_[2]) },
          #code => sub { init_named_cv('asdf'); newATTRSUB($_[1], 'asdf', $_[2]); 0; },
         'comment' => '',
         'line' =>
@@ -1208,6 +1208,7 @@ my $grammar = {
       },
       {
         'code'     => '{ $$ = NULL parser->copline = NOLINE } ',
+        code => sub { undef },
         'comment'  => '',
         'line'     => ' \';\' { $$ = NULL parser->copline = NOLINE } ',
         'raw_rule' => ' ; ',
@@ -2357,7 +2358,7 @@ my $grammar = {
       },
       {
         #'code'    => '{ $$ = op_convert_list($1, 0, $2); } ',
-        'code'    => sub { $DB::single=1; op_convert_list($_[0], 0, $_[1]) },
+        'code'    => sub { op_convert_list($_[0], 0, $_[1]) },
         'comment' => '/* print @args \*\/',
         'line' =>
             ' LSTOP optlistexpr /* print @args \*\/ { $$ = op_convert_list($1, 0, $2); } ',

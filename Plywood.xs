@@ -6,6 +6,31 @@
 static SV *hint_keyword;
 static SV *parse_sv;
 
+SV* enframe(OP *op)
+{
+    SV *result = newSV(0);
+    sv_setiv(newSVrv(result, NULL), PTR2IV(op));
+    return result;
+}
+
+OP* deframe(SV *sv)
+{
+    OP *result;
+    if ( !SvOK(sv) )
+    {
+      return NULL;
+    }
+    if ( !SvROK(sv) )
+    {
+      croak("%s: %s is not an op: %p", "deframe_op", "op", sv);
+    }
+    {
+      IV tmp = SvIV((SV*)SvRV(sv));
+      result = INT2PTR(OP *,tmp);
+    }
+    return result;
+}
+
 static int is_active(pTHX_)
 {
   HE *he;
@@ -55,50 +80,21 @@ static int plywood_keyword_plugin(pTHX_
   PUSHMARK(SP);
   XPUSHs(buffer);
   PUTBACK;
-  int result = call_sv(parse_sv, G_SCALAR);
+  int count = call_sv(parse_sv, G_SCALAR);
   SPAGAIN;
+
+  if ( count == 1)
+  {
+    SV *result = POPs;
+    *op_ptr = deframe(result);
+    return KEYWORD_PLUGIN_STMT;
+  }
 
   FREETMPS;
   LEAVE;
-  /*
-  int result = KEYWORD_PLUGIN_DECLINE;
-  */
 
   *op_ptr = newOP(OP_NULL,0);
   return KEYWORD_PLUGIN_STMT;
-  return KEYWORD_PLUGIN_DECLINE;
-  if ( result == KEYWORD_PLUGIN_DECLINE )
-  {
-    return next_keyword_plugin(aTHX_ keyword_ptr, keyword_len, op_ptr);
-  }
-  return result;
-}
-
-
-
-SV* enframe(OP *op)
-{
-    SV *result = newSV(0);
-    sv_setiv(newSVrv(result, NULL), PTR2IV(op));
-    return result;
-}
-
-OP* deframe(SV *sv)
-{
-    OP *result;
-    if ( !SvOK(sv) )
-    {
-      return NULL;
-    }
-    if ( !SvROK(sv) )
-    {
-      croak("%s: %s is not an op: %p", "deframe_op", "op", sv);
-    }
-    {
-      IV tmp = SvIV((SV*)SvRV(sv));
-      result = INT2PTR(OP *,tmp);
-    }
-    return result;
 }
 
 MODULE = Plywood PACKAGE = Plywood
@@ -107,6 +103,7 @@ BOOT:
     wrap_keyword_plugin(plywood_keyword_plugin, &next_keyword_plugin);
     hint_keyword = newSVpvs("Plywood/enabled");
     parse_sv     = newSVpvs("Plywood::parse");
+    SvREFCNT_inc(hint_keyword);
 
 SV*
 hint_keyword()
@@ -120,10 +117,12 @@ MODULE = Plywood PACKAGE = Plywood::Gmrs
 void
 parse_begin()
 CODE:
+    1;
 
 void
 parse_end()
 CODE:
+    1;
 
 void
 _newPROG(SV *sv_op)
