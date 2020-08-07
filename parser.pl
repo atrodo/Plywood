@@ -9,6 +9,8 @@ my $gmr = do './gmr.pl' || die;
 my %lut;
 my %tokens;
 my $ws_trim = delete $gmr->{'$ws_trim'};
+my $begin = delete $gmr->{'$BEGIN'};
+my $end = delete $gmr->{'$END'};
 
 sub add_token
 {
@@ -276,20 +278,17 @@ LOOKAHEAD:
           return $match;
         }
       }
+      elsif ( ref $qr eq 'ARRAY' )
       {
-      if ( $$src =~ m/\G($qr)/g )
-      {
-        $match = $1;
-        warn "$sym => $match";
-
-        #unshift @stack, $rule->{sym};
-        #my $r = $rule->{code}->($match);
-        #die Data::Dumper::Dumper( $r, $match )
-        #    if $r ne $match;
-        #unshift @result, $rule->{code}->($match);
-        #$matched = 1;
-        $lookahead = $rule;
-        last RULE;
+        foreach my $sub_qr (@$qr)
+        {
+          pos($$src) = $pos;
+          my $match = __SUB__->($sub_qr);
+          if ( defined $match )
+          {
+            return $match;
+          }
+        }
       }
       else
       {
@@ -408,7 +407,7 @@ sub bascend
         if $atoms[$i] ne $stack[$i]->{lasym};
     }
     my $result = $rule->{code}->( map { $_->{match} } @stack );
-    @stack = ({ lasym => $sym, match => $result, ast => [map { { $_->%{qw/lasym match ast/} } } @stack] });
+    @stack = ({ lasym => $sym, match => $result, rule => join(' ', $rule->{atoms}->@*), ast => [map { { $_->%{qw/lasym match ast rule/} } } @stack] });
     @rules = grep { $_->{atoms}->[0] eq $sym } $lut{$sym}->@*;
     return 1;
   };
@@ -547,6 +546,11 @@ sub bascend
   return (\@stack, $lookahead, { lasym => $sym, match => $result });
 }
 
-die Data::Dumper::Dumper( bascend('grammar', undef, \$src), 'success' );
+use B::Terse;
+$begin->() if $begin;
+warn Data::Dumper::Dumper( bascend('grammar', undef, \$src), 'success' );
+B::Terse::compile()->();
+$end->() if $end;
+die;
 
 1;
